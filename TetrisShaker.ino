@@ -437,6 +437,9 @@ public:
     if (this->getBagChar(7) == '_') {
       this->newBag(2);
     }
+
+    this->resetPos();
+    this->resetFallTimer(2000);
   }
 
   void resetFallTimer(int delta) {
@@ -628,6 +631,7 @@ public:
   bool attemptFall(Board& board) {
     if (millis() > this->nextFall) {
       this->move(board, 0, 1);
+      this->nextFall = millis() + 1000;
       return true;
     }
 
@@ -764,21 +768,22 @@ void setup() {
 }
 
 const int FRAMERATE = 60;
-long int nextFrame = 0;
+unsigned long nextFrame = 0;
 void loop() {
-  if (controller->isConnected()) {
-    XboxControlsEvent e;
-    controller->read(&e);
-
-    inputHandler->left->update(e.dpadLeft);
-    inputHandler->right->update(e.dpadRight);
-    inputHandler->rotateCW->update(e.buttonA);
-    inputHandler->rotateCCW->update(e.buttonB);
-    inputHandler->rotate180->update(e.buttonX);
-    inputHandler->hardDrop->update(e.dpadUp);
-    inputHandler->softDrop->update(e.dpadDown);
-    inputHandler->hold->update(e.buttonY);
+  if (!controller->isConnected()) {
+    return;
   }
+
+  XboxControlsEvent e;
+  controller->read(&e);
+  inputHandler->left->update(e.dpadLeft);
+  inputHandler->right->update(e.dpadRight);
+  inputHandler->rotateCW->update(e.buttonA);
+  inputHandler->rotateCCW->update(e.buttonB);
+  inputHandler->rotate180->update(e.buttonX);
+  inputHandler->hardDrop->update(e.dpadUp);
+  inputHandler->softDrop->update(e.dpadDown);
+  inputHandler->hold->update(e.buttonY);
 
   if (micros() > nextFrame) {
     Serial.println("frame stepped");
