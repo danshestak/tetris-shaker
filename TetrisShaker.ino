@@ -751,31 +751,30 @@ InputHandler* inputHandler;
 Renderer* renderer;
 Piece* piece;
 Board* board;
-XboxController* controller;
+XboxController controller;
 
 void setup() {
   Serial.begin(115200);
+  controller.begin();
 
   inputHandler = new InputHandler(50);
   renderer = new Renderer();
   piece = new Piece();
   board = new Board();
-  controller = new XboxController();
 
-  controller->begin();
   board->render(*renderer);
   piece->render(*renderer);
 }
 
-const int FRAMERATE = 60;
+const int FRAMERATE = 30;
 unsigned long nextFrame = 0;
 void loop() {
-  if (!controller->isConnected()) {
+  if (!controller.isConnected()) {
     return;
   }
 
   XboxControlsEvent e;
-  controller->read(&e);
+  controller.read(&e);
   inputHandler->left->update(e.dpadLeft);
   inputHandler->right->update(e.dpadRight);
   inputHandler->rotateCW->update(e.buttonA);
