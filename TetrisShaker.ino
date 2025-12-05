@@ -102,7 +102,7 @@ public:
   }
 };
 
-constexpr int rendererValueToColor[8][3] = {
+constexpr int rendererValueToColor[10][3] = {
   {0, 0, 0},
   {255, 0, 0},
   {255, 127, 0},
@@ -110,7 +110,9 @@ constexpr int rendererValueToColor[8][3] = {
   {0, 255, 0},
   {0, 255, 255},
   {0, 0, 255},
-  {191, 0, 255}
+  {191, 0, 255},
+  {255, 255, 255},
+  {127, 127, 127}
 };
 const Grid shapeGrids[] = {
   Grid(3, 3) //Z
@@ -171,7 +173,7 @@ constexpr int srsIKicks[4][5][2] = {
   {{0,0}, {+1,0}, {-2,0}, {+1,+2}, {-2,-1}},
 };
 
-Adafruit_NeoPixel matrix = Adafruit_NeoPixel(256, 15, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel matrix = Adafruit_NeoPixel(256, 4, NEO_GRB + NEO_KHZ800);
 class Renderer {
 private:
   static int coordToIndex(int x, int y) {
@@ -206,13 +208,22 @@ public:
 
 class Board {
 private:
-  int score;
   int level;
   int linesCleared;
   Grid* grid;
 public:
+  int score;
   Board() {
     this->grid = new Grid(10, 16);
+    this->reset();
+  }
+
+  void reset() {
+    for (int x = 0; x < this->getWidth(); x++) {
+      for (int y = 0; y < this->getHeight(); y++) {
+        this->grid->set(x, y, 0);
+      }
+    }
     this->score = 0;
     this->level = 1;
     this->linesCleared = 0;
@@ -302,6 +313,7 @@ public:
 
       this->linesCleared += newLinesCleared;
       this->score += newScore;
+      this->level = 1 + this->linesCleared/10;
     }
   }
 
@@ -309,10 +321,10 @@ public:
     this->score += newPoints;
   }
 
-  void render(Renderer& renderer) {
+  void render(Renderer& renderer, bool gameOver) {
     for (int x = 0; x < this->getWidth(); x++) {
       for (int y = 0; y < this->getHeight(); y++) {
-        renderer.renderPixel(x, y, this->get(x, y));
+        renderer.renderPixel(x, y, gameOver ? 8 : this->get(x, y));
       }
     }
   }
@@ -383,6 +395,10 @@ public:
   }
 
   Piece() {
+    this->reset();
+  }
+
+  void reset() {
     this->newBag(1);
     this->newBag(2);
     this->resetPos();
@@ -612,6 +628,19 @@ public:
     return false;
   }
 
+  bool isGameOver(Board& board) {
+    const int oldX = this->posX;
+    const int oldY = this->posY;
+
+    this->resetPos();
+    const bool gameOver = this->collidesWithBoard(board);
+
+    this->posX = oldX;
+    this->posY = oldY;
+
+    return gameOver;
+  }
+
   bool attemptAutoLock(Board& board) {
     const bool newGrounded = this->isGrounded(board);
     if (newGrounded && this->grounded) {
@@ -685,7 +714,7 @@ public:
         
         if (!this->held) {
           this->held = true;
-          this->debouce = millis() + 100;
+          this->debouce = millis() + 200;
           this->lastReady = millis();
           this->ready = true;
           return;
@@ -756,13 +785,12 @@ XboxController controller;
 void setup() {
   Serial.begin(115200);
 
+  delay(1000);
+
   inputHandler = new InputHandler(100);
   renderer = new Renderer();
   piece = new Piece();
   board = new Board();
-
-  board->render(*renderer);
-  piece->render(*renderer);
 
   delay(3000);
   Serial.println("starting connection period");
@@ -771,10 +799,13 @@ void setup() {
 
 const int FRAMERATE = 30;
 unsigned long nextFrame = 0;
+unsigned long lastDebugPrint = 0;
 void loop() {
   if (!controller.isConnected()) {
-    Serial.println("attempting to connect...");
-    delay(6000);
+    if (millis() > lastDebugPrint + 3000) {
+      Serial.println("waiting for controller...");
+      lastDebugPrint = millis();
+    }
     return;
   }
 
@@ -841,13 +872,23 @@ void loop() {
 
     updated = updated || piece->attemptFall(*board);
     updated = updated || piece->attemptAutoLock(*board);
-
+    
     if (updated) {
       Serial.println("display updated");
       matrix.clear();
       board->clearFullLines(piece->lastMoveWasTSpin());
-      board->render(*renderer);
-      piece->render(*renderer);
+
+      if (piece->isGameOver(*board)) {
+        Serial.println("game over");
+        board->render(*renderer, true);
+        board->reset();
+        piece->reset();
+        nextFrame = micros() + 5000000;
+      } else {
+        board->render(*renderer, false);
+        piece->render(*renderer);
+      }
+      
       matrix.show();
     }
   }
