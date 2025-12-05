@@ -189,7 +189,7 @@ private:
 public:
   Renderer() {
     matrix.begin();
-    matrix.setBrightness(5);
+    matrix.setBrightness(2);
     matrix.clear();
     matrix.show();
   }
@@ -731,7 +731,7 @@ public:
     this->rotateCCW = new Input(-1);
     this->rotate180 = new Input(-1);
     this->hardDrop = new Input(-1);
-    this->softDrop = new Input(repeatTime);
+    this->softDrop = new Input(repeatTime/2);
     this->hold = new Input(-1);
   }
 
@@ -755,12 +755,18 @@ XboxController controller;
 
 void setup() {
   Serial.begin(115200);
-  controller.begin();
 
-  inputHandler = new InputHandler(50);
+  inputHandler = new InputHandler(100);
   renderer = new Renderer();
   piece = new Piece();
   board = new Board();
+
+  delay(5000);
+  Serial.println("starting connection period");
+  controller.begin();
+
+  delay(5000);
+  Serial.println("ending connection period");
 
   board->render(*renderer);
   piece->render(*renderer);
@@ -775,8 +781,8 @@ void loop() {
 
   XboxControlsEvent e;
   controller.read(&e);
-  inputHandler->left->update(e.dpadLeft);
-  inputHandler->right->update(e.dpadRight);
+  inputHandler->left->update(e.dpadRight);
+  inputHandler->right->update(e.dpadLeft);
   inputHandler->rotateCW->update(e.buttonA);
   inputHandler->rotateCCW->update(e.buttonB);
   inputHandler->rotate180->update(e.buttonX);
