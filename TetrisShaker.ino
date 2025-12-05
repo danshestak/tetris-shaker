@@ -196,7 +196,7 @@ public:
 
   void renderPixel(int x, int y, int value) {
     matrix.setPixelColor(
-      this->coordToIndex(x, y), 
+      this->coordToIndex(y, x), 
       rendererValueToColor[value][0], 
       rendererValueToColor[value][1], 
       rendererValueToColor[value][2]
@@ -761,28 +761,27 @@ void setup() {
   piece = new Piece();
   board = new Board();
 
-  delay(5000);
-  Serial.println("starting connection period");
-  controller.begin();
-
-  delay(5000);
-  Serial.println("ending connection period");
-
   board->render(*renderer);
   piece->render(*renderer);
+
+  delay(3000);
+  Serial.println("starting connection period");
+  controller.begin();
 }
 
 const int FRAMERATE = 30;
 unsigned long nextFrame = 0;
 void loop() {
   if (!controller.isConnected()) {
+    Serial.println("attempting to connect...");
+    delay(6000);
     return;
   }
 
   XboxControlsEvent e;
   controller.read(&e);
-  inputHandler->left->update(e.dpadRight);
-  inputHandler->right->update(e.dpadLeft);
+  inputHandler->left->update(e.dpadLeft);
+  inputHandler->right->update(e.dpadRight);
   inputHandler->rotateCW->update(e.buttonA);
   inputHandler->rotateCCW->update(e.buttonB);
   inputHandler->rotate180->update(e.buttonX);
