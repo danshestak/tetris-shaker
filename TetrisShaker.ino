@@ -191,7 +191,7 @@ private:
 public:
   Renderer() {
     matrix.begin();
-    matrix.setBrightness(2);
+    matrix.setBrightness(10);
     matrix.clear();
     matrix.show();
   }
@@ -208,10 +208,18 @@ public:
 
 class Board {
 private:
+  Grid* grid;
+  int dropTime;
+
+  void recalculateDropTime() {
+    this->dropTime = 1000;
+    for (int i = 0; i < this->level-1; i++) {
+      dropTime = (int)(this->dropTime*0.9);
+    }
+  }
+public:
   int level;
   int linesCleared;
-  Grid* grid;
-public:
   int score;
   Board() {
     this->grid = new Grid(10, 16);
@@ -227,6 +235,7 @@ public:
     this->score = 0;
     this->level = 1;
     this->linesCleared = 0;
+    this->recalculateDropTime();
   }
 
   int getWidth() {
@@ -245,7 +254,7 @@ public:
     this->grid->set(x, y, value);
   }
 
-  void clearFullLines(bool tSpin) {
+  int clearFullLines(bool tSpin) {
     int newLinesCleared = 0;
     const int W = this->getWidth();
     const int H = this->getHeight();
@@ -281,50 +290,64 @@ public:
     }
 
     int newScore = 0;
-    if (newLinesCleared > 0) {
-      if (!tSpin) {
-        switch (newLinesCleared) {
-          case 1:
-            newScore = this->level*100;
-            break;
-          case 2:
-            newScore = this->level*300;
-            break;
-          case 3:
-            newScore = this->level*500;
-            break;
-          case 4:
-            newScore = this->level*800;
-            break;
-        }
-      } else {
-        switch (newLinesCleared) {
-          case 1:
-            newScore = this->level*800;
-            break;
-          case 2:
-            newScore = this->level*1200;
-            break;
-          case 3:
-            newScore = this->level*1600;
-            break;
-        }
+    if (!tSpin) {
+      switch (newLinesCleared) {
+        case 1:
+          newScore = this->level*100;
+          break;
+        case 2:
+          newScore = this->level*300;
+          break;
+        case 3:
+          newScore = this->level*500;
+          break;
+        case 4:
+          newScore = this->level*800;
+          break;
       }
-
-      this->linesCleared += newLinesCleared;
-      this->score += newScore;
-      this->level = 1 + this->linesCleared/10;
+    } else {
+      switch (newLinesCleared) {
+        case 1:
+          newScore = this->level*800;
+          break;
+        case 2:
+          newScore = this->level*1200;
+          break;
+        case 3:
+          newScore = this->level*1600;
+          break;
+      }
     }
+
+    this->linesCleared += newLinesCleared;
+    this->score += newScore;
+
+    const int newLevel = 1 + this->linesCleared/10;
+    if (newLevel != this->level) {
+      this->level = newLevel;
+      this->recalculateDropTime();
+    }
+
+    return newLinesCleared;
   }
 
   void awardPoints(int newPoints) {
     this->score += newPoints;
   }
 
-  void render(Renderer& renderer, bool gameOver) {
+  int getDropTime() {
+    return this->dropTime;
+  }
+
+  void render(Renderer& renderer, bool white) {
     for (int x = 0; x < this->getWidth(); x++) {
       for (int y = 0; y < this->getHeight(); y++) {
-        renderer.renderPixel(x, y, gameOver ? 8 : this->get(x, y));
+        if (!white) {
+          renderer.renderPixel(x, y, this->get(x, y));
+        } else {
+          renderer.renderPixel(x, y, this->get(x, y) != 0 ? 8 : 0);
+        }
+        
       }
     }
   }
@@ -404,7 +427,7 @@ public:
     this->resetPos();
     this->hold = '_';
     this->holdAvailable = true;
-    this->resetFallTimer(2000);
+    this->resetFallTimer(1000);
     this->grounded = false;
     this->lastGrounded = 0;
   }
@@ -440,6 +463,7 @@ public:
     }
 
     this->holdAvailable = false;
+    this->resetPos();
     return true;
   }
 
@@ -455,7 +479,6 @@ public:
     }
 
     this->resetPos();
-    this->resetFallTimer(2000);
   }
 
   void resetFallTimer(int delta) {
@@ -631,12 +654,14 @@ public:
   bool isGameOver(Board& board) {
     const int oldX = this->posX;
     const int oldY = this->posY;
+    const int oldRot = this->rot;
 
     this->resetPos();
     const bool gameOver = this->collidesWithBoard(board);
 
     this->posX = oldX;
     this->posY = oldY;
+    this->rot = oldRot;
 
     return gameOver;
   }
@@ -660,7 +685,7 @@ public:
   bool attemptFall(Board& board) {
     if (millis() > this->nextFall) {
       this->move(board, 0, 1);
-      this->nextFall = millis() + 1000;
+      this->nextFall = millis() + board.getDropTime();
       return true;
     }
 
@@ -682,6 +707,60 @@ public:
         }
 
         renderer.renderPixel(this->getPosX() + relX, this->getPosY() + relY, currValue);
+      }
+    }
+  }
+
+  void renderGhost(Renderer& renderer, Board& board) {
+    const int oldY = this->posY;
+    while (!this->isGrounded(board)) {
+      this->posY += 1;
+    }
+    
+    const Grid& shape = this->getShapeGridByChar(this->getBagChar(0));
+
+    for (int relX = 0; relX < shape.width; relX++) {
+      for (int relY = 0; relY < shape.height; relY++) {
+        if (shape.get(relX, relY, rot) == 0) {
+          continue;
+        }
+
+        renderer.renderPixel(this->getPosX() + relX, this->getPosY() + relY, 9);
+      }
+    }
+
+    this->posY = oldY;
+  }
+
+  void renderHold(Renderer& renderer) {
+    if (this->hold == '_') return;
+    const Grid& shape = this->getShapeGridByChar(this->hold);
+
+    for (int relX = 0; relX < shape.width; relX++) {
+      for (int relY = 0; relY < shape.height; relY++) {
+        const int currValue = shape.get(relX, relY, 0);
+        if (currValue == 0) {
+          continue;
+        }
+
+        renderer.renderPixel(12 + relX, 13 + relY, currValue);
+      }
+    }
+  }
+
+  void renderNext(Renderer& renderer) {
+    for (int i = 0; i < 3; i++) {
+      const Grid& shape = this->getShapeGridByChar(this->getBagChar(i+1));
+
+      for (int relX = 0; relX < shape.width; relX++) {
+        for (int relY = 0; relY < shape.height; relY++) {
+          const int currValue = shape.get(relX, relY, 0);
+          if (currValue == 0) {
+            continue;
+          }
+
+          renderer.renderPixel(12 + relX, relY + i*4, currValue);
+        }
       }
     }
   }
@@ -780,23 +859,77 @@ InputHandler* inputHandler;
 Renderer* renderer;
 Piece* piece;
 Board* board;
-XboxController controller;
+XboxController controller; //"40:8e:2c:80:c9:fa"
+
+// //Server Code
+// #include <Adafruit_SSD1306.h>
+// #include <WiFi.h>
+// #include <WebServer.h>
+// #include <ESPmDNS.h>
+
+// WebServer server(80);
+// //Adafruit_SSD1306 lcd(-1);
+// Adafruit_SSD1306 lcd(128, 64);
+// const char* ssid = "MarkoHotspot"; //CHANGE THESE LINES!!!
+// const char* pass = "marko123"; //CHANGE THESE LINES!!!
+// const char* mdns = "marko"; // *** CHANGE THIS TO A UNIQUE NAME ***
+
+// #include "html_index.h"
+// void on_homepage() {
+//   String html = FPSTR(html_index);
+//   server.send(200, "text/html", html);
+// }
+
+// void on_status() {
+//   String html = "";
+//   html += "{\"score\":";
+//   html += (board->score);
+//   html += "}";
+//   server.send(200, "text/html", html);
+// } 
 
 void setup() {
   Serial.begin(115200);
 
   delay(1000);
 
-  inputHandler = new InputHandler(100);
+  inputHandler = new InputHandler(75);
   renderer = new Renderer();
   piece = new Piece();
   board = new Board();
+
+  // //SERVER CODE
+  // lcd.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+  // lcd.setTextColor(WHITE);
+  // lcd.clearDisplay();
+  // lcd.display(); 
+    
+  // WiFi.mode(WIFI_STA);  // start in WiFi Station mode
+  // WiFi.begin(ssid, pass);
+
+  // lcd.setCursor(0,0); lcd.print("Connecting..."); lcd.display();
+  // while(WiFi.status() != WL_CONNECTED) { delay(500); }
+
+  // lcd.clearDisplay(); lcd.setCursor(0,0); lcd.print("Connected.\nIP:");
+  // lcd.println(WiFi.localIP()); lcd.display(); // print out assigned IP address
+
+  // lcd.setCursor(0,17); lcd.println("Register mDNS..."); lcd.display();
+  // if (MDNS.begin(mdns)) {  // register mDNS name
+  //   lcd.println("success."); lcd.print(mdns); lcd.print(".local/"); lcd.display();
+  // } else { lcd.print("failed."); lcd.display(); }
+
+  // // set HTTP GET functions
+  // server.on("/", on_homepage);
+  // server.on("/js", on_status);
+  
+  // server.begin();
 
   delay(3000);
   Serial.println("starting connection period");
   controller.begin();
 }
 
+bool forceRenderNextFrame = false;
 const int FRAMERATE = 30;
 unsigned long nextFrame = 0;
 unsigned long lastDebugPrint = 0;
@@ -808,6 +941,8 @@ void loop() {
     }
     return;
   }
+
+  // server.handleClient();
 
   XboxControlsEvent e;
   controller.read(&e);
@@ -821,7 +956,7 @@ void loop() {
   inputHandler->hold->update(e.buttonY);
 
   if (micros() > nextFrame) {
-    Serial.println("frame stepped");
+    // Serial.println("frame stepped");
     nextFrame = micros() + 1000000/FRAMERATE;
 
     bool updated = false;
@@ -838,7 +973,7 @@ void loop() {
     if (inputHandler->softDrop->pop()) {
       if (piece->move(*board, 0, 1)) {
         updated = true;
-        piece->resetFallTimer(2000);
+        piece->resetFallTimer(board->getDropTime());
         board->awardPoints(1);
       }
     }
@@ -851,6 +986,7 @@ void loop() {
       }
       piece->place(*board);
       board->awardPoints(moved*2);
+      piece->resetFallTimer(board->getDropTime());
     }
 
     if (inputHandler->rotateCW->pop()) {
@@ -867,27 +1003,37 @@ void loop() {
 
     if (inputHandler->hold->pop()) {
       updated = updated || piece->swapHold();
-      piece->resetFallTimer(2000);
+      piece->resetFallTimer(board->getDropTime());
     }
 
     updated = updated || piece->attemptFall(*board);
     updated = updated || piece->attemptAutoLock(*board);
     
-    if (updated) {
+    if (updated || forceRenderNextFrame) {
+      forceRenderNextFrame = false;
       Serial.println("display updated");
       matrix.clear();
-      board->clearFullLines(piece->lastMoveWasTSpin());
+      const int newLinesCleared = board->clearFullLines(piece->lastMoveWasTSpin());
+
+      board->render(*renderer, false);
+      piece->render(*renderer);
 
       if (piece->isGameOver(*board)) {
         Serial.println("game over");
         board->render(*renderer, true);
         board->reset();
         piece->reset();
-        nextFrame = micros() + 5000000;
+        nextFrame = micros() + 3000000;
       } else {
-        board->render(*renderer, false);
+        board->render(*renderer, newLinesCleared > 0);
+        piece->renderGhost(*renderer, *board);
         piece->render(*renderer);
+        if (newLinesCleared > 0) {
+          forceRenderNextFrame = true;
+        }
       }
+      piece->renderHold(*renderer);
+      piece->renderNext(*renderer);
       
       matrix.show();
     }
